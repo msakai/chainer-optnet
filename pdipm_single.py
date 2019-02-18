@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+import sys
 import numpy as np
 import scipy.linalg
 
@@ -153,7 +154,8 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
         if verbose >= 1:
             print(("iter: {}, primal_res = {:.5g}, dual_res = {:.5g}, " +
                    "gap = {:.5g}, kappa(d) = {:.5g}").format(
-                i, pri_resid, dual_resid, mu, min(d) / max(d)))
+                    i, pri_resid, dual_resid, mu, min(d) / max(d)),
+                  file=sys.stderr)
         # if (pri_resid < 5e-4 and dual_resid < 5e-4 and mu < 4e-4):
         improved = (prev_resid is None) or (resid < prev_resid + 1e-6)
         if not improved or resid < eps:

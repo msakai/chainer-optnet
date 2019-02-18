@@ -1,4 +1,5 @@
 from abc import ABCMeta, abstractmethod
+import sys
 import numpy as np
 import scipy.linalg
 import pivots
@@ -456,7 +457,8 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
 
         if verbose >= 1:
             print('iter: {}, pri_resid: {:.5g}, dual_resid: {:.5g}, mu: {:.5g}'.format(
-                i, pri_resid.mean(), dual_resid.mean(), mu.mean()))
+                i, pri_resid.mean(), dual_resid.mean(), mu.mean()),
+                  file=sys.stderr)
 
         if best['resids'] is None:
             best['resids'] = resids
@@ -482,7 +484,7 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
                 best['y'][I_neq] = y[I_neq]
         if nNotImproved == notImprovedLim or best['resids'].max() < eps or mu.min() > 1e32:
             if best['resids'].max() > 1. and verbose >= 0:
-                print(INACC_ERR)
+                print(INACC_ERR, file=sys.stderr)
             return best['x'], best['y'], best['z'], best['s']
 
         dx_aff, ds_aff, dz_aff, dy_aff = kkt_solver.solve(rx, rs, rz, ry)
@@ -522,7 +524,7 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
         y = y + alpha_neq * dy if neq > 0 else None
 
     if best['resids'].max() > 1. and verbose >= 0:
-        print(INACC_ERR)
+        print(INACC_ERR, file=sys.stderr)
     return best['x'], best['y'], best['z'], best['s']
 
 
