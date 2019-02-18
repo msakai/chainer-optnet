@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.linalg import lu_factor
 
 def pivots_to_perm(piv):
     p = np.array(range(len(piv)), dtype=np.int32)
@@ -48,6 +47,8 @@ def inv_perm(idx):
 
 
 if __name__ == '__main__':
+    from scipy.linalg import lu_factor
+
     A = np.array([[2, 5, 8, 7], [5, 2, 2, 8], [7, 5, 6, 6], [5, 4, 4, 8]])
 
     lu, piv = lu_factor(A)
