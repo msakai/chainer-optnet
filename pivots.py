@@ -1,7 +1,8 @@
 import numpy as np
+import chainer
 
 def pivots_to_perm(piv):
-    p = np.array(range(len(piv)), dtype=np.int32)
+    p = id_perm(len(piv))
     for (i,j) in enumerate(piv):
         p[i], p[j] = p[j], p[i]
     return p
@@ -47,11 +48,11 @@ def inv_perm(idx):
 
 
 if __name__ == '__main__':
-    from scipy.linalg import lu_factor
+    import scipy.linalg
 
     A = np.array([[2, 5, 8, 7], [5, 2, 2, 8], [7, 5, 6, 6], [5, 4, 4, 8]])
 
-    lu, piv = lu_factor(A)
+    lu, piv = scipy.linalg.lu_factor(A)
     p = pivots_to_perm(piv)
     q = inv_perm(p)
 

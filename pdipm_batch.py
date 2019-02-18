@@ -77,13 +77,6 @@ def batch_pivots_to_perm(piv):
     return ret
 
 
-def batch_perm_to_pivots(idx):
-    ret = np.empty_like(idx)
-    for i in range(len(idx)):
-        ret[i] = pivots.perm_to_pivots(idx[i])
-    return ret
-
-
 def batch_lu_factor_partial(A, B, C):
     """
     factor(A, B, C)(D) compute LU factorization of
@@ -461,8 +454,8 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
         d = z / s
         kkt_solver.set_d(d)
 
-        if verbose == 1:
-            print('iter: {}, pri_resid: {:.5e}, dual_resid: {:.5e}, mu: {:.5e}'.format(
+        if verbose >= 1:
+            print('iter: {}, pri_resid: {:.5g}, dual_resid: {:.5g}, mu: {:.5g}'.format(
                 i, pri_resid.mean(), dual_resid.mean(), mu.mean()))
 
         if best['resids'] is None:

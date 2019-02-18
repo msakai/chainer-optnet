@@ -118,7 +118,8 @@ class KKTSolverChoPartial(KKTSolver):
         return dx, ds, dz, dy
 
 
-def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver, verbose=False):
+def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
+            eps=1e-12, verbose=0, maxIter=20):
     nineq, nz, neq, _ = get_sizes(G, A)
 
     # find initial values
@@ -135,7 +136,7 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver, verbose=False):
         z -= np.min(z) - 1
 
     prev_resid = None
-    for i in range(20):
+    for i in range(maxIter):
         # affine scaling direction
         rx = (A.T.dot(y) if neq > 0 else 0.) + G.T.dot(z) + Q.dot(x) + p
         rs = z
@@ -149,13 +150,13 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver, verbose=False):
         d = z / s
         kkt_solver.set_d(d)
 
-        if verbose:
-            print(("primal_res = {0:.5g}, dual_res = {1:.5g}, " +
-                   "gap = {2:.5g}, kappa(d) = {3:.5g}").format(
-                pri_resid, dual_resid, mu, min(d) / max(d)))
+        if verbose >= 1:
+            print(("iter: {}, primal_res = {:.5g}, dual_res = {:.5g}, " +
+                   "gap = {:.5g}, kappa(d) = {:.5g}").format(
+                i, pri_resid, dual_resid, mu, min(d) / max(d)))
         # if (pri_resid < 5e-4 and dual_resid < 5e-4 and mu < 4e-4):
         improved = (prev_resid is None) or (resid < prev_resid + 1e-6)
-        if not improved or resid < 1e-6:
+        if not improved or resid < eps:
             return x, y, z
         prev_resid = resid
 
