@@ -24,8 +24,7 @@ def lu_factor(a, overwrite_a=False, check_finite=True):
     else:
         dtype = numpy.find_common_type((a.dtype.char, 'f'), ()).char
 
-    # to prevent `a` to be overwritten
-    a = a.astype(dtype, order='F', copy=True)
+    a = a.astype(dtype, order='F', copy=(not overwrite_a))
 
     cusolver_handle = device.get_cusolver_handle()
     dev_info = cupy.empty(1, dtype=numpy.intc)
@@ -82,7 +81,7 @@ def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
 
     if b.ndim == 1:
         b = cupy.expand_dims(b, 1)
-    b = b.astype(dtype, order='F', copy=True)
+    b = b.astype(dtype, order='F', copy=(not overwrite_b))
 
     cusolver_handle = device.get_cusolver_handle()
     dev_info = cupy.empty(1, dtype=numpy.intc)
