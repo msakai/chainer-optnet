@@ -67,6 +67,15 @@ def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
     else:
         dtype = numpy.find_common_type((lu.dtype.char, 'f'), ()).char
 
+    if trans == 0:
+        trans = cublas.CUBLAS_OP_N
+    elif trans == 1:
+        trans = cublas.CUBLAS_OP_T
+    elif trans == 2:
+        trans = cublas.CUBLAS_OP_H
+    else:
+        raise ValueError("unknown trans")
+
     lu = lu.astype(dtype, order='F', copy=False)
     ipiv = ipiv.astype(ipiv.dtype, order='F', copy=False)
     ipiv += 1
@@ -85,7 +94,7 @@ def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
 
     # solve for the inverse
     getrs(cusolver_handle,
-          cublas.CUBLAS_OP_T if trans else cublas.CUBLAS_OP_N,
+          trans,
           m, b.shape[1], lu.data.ptr, m, ipiv.data.ptr, b.data.ptr,
           m, dev_info.data.ptr)
 
