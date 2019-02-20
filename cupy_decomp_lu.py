@@ -84,7 +84,7 @@ def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
         raise ValueError("unknown trans")
 
     lu = lu.astype(dtype, order='F', copy=False)
-    ipiv = ipiv.astype(ipiv.dtype, order='F', copy=False)
+    ipiv = ipiv.astype(ipiv.dtype, order='F', copy=True)
     ipiv += 1
 
     if b.ndim == 1:
