@@ -28,9 +28,9 @@ def lu_factor(a, overwrite_a=False, check_finite=True):
     a = a.astype(dtype, order='F', copy=True)
 
     cusolver_handle = device.get_cusolver_handle()
-    dev_info = cupy.empty(1, dtype=dtype)
+    dev_info = cupy.empty(1, dtype=numpy.intc)
 
-    ipiv = cupy.empty((a.shape[0], 1), dtype=numpy.int32)
+    ipiv = cupy.empty((a.shape[0], 1), dtype=numpy.intc)
 
     if dtype == 'f':
         getrf = cusolver.sgetrf
@@ -76,7 +76,7 @@ def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
     b = b.astype(dtype, order='F', copy=True)
 
     cusolver_handle = device.get_cusolver_handle()
-    dev_info = cupy.empty(1, dtype=dtype)
+    dev_info = cupy.empty(1, dtype=numpy.intc)
 
     if dtype == 'f':
         getrs = cusolver.sgetrs
