@@ -26,6 +26,14 @@ def lu_factor(a, overwrite_a=False, check_finite=True):
 
     a = a.astype(dtype, order='F', copy=(not overwrite_a))
 
+    if check_finite:
+        if a.dtype.kind == 'f' and not cupy.isfinite(a).all():
+            raise ValueError(
+                "array must not contain infs or NaNs")
+        if b.dtype.kind == 'f' and not cupy.isfinite(b).all():
+            raise ValueError(
+                "array must not contain infs or NaNs")
+
     cusolver_handle = device.get_cusolver_handle()
     dev_info = cupy.empty(1, dtype=numpy.intc)
 
@@ -82,6 +90,14 @@ def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
     if b.ndim == 1:
         b = cupy.expand_dims(b, 1)
     b = b.astype(dtype, order='F', copy=(not overwrite_b))
+
+    if check_finite:
+        if lu.dtype.kind == 'f' and not cupy.isfinite(lu).all():
+            raise ValueError(
+                "array must not contain infs or NaNs")
+        if b.dtype.kind == 'f' and not cupy.isfinite(b).all():
+            raise ValueError(
+                "array must not contain infs or NaNs")
 
     cusolver_handle = device.get_cusolver_handle()
     dev_info = cupy.empty(1, dtype=numpy.intc)
