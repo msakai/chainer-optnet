@@ -59,6 +59,9 @@ def lu_factor(a, overwrite_a=False, check_finite=True):
 
 
 def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
+    if not cuda.cusolver_enabled:
+        raise RuntimeError('Current cupy only supports cusolver in CUDA 8.0')
+
     (lu, ipiv) = lu_and_piv
 
     util._assert_cupy_array(lu)
