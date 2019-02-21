@@ -143,20 +143,21 @@ def quadprog(Q, p, G, h, A = None, b = None):
 
 
 if __name__ == '__main__':
-    import numpy as np
-    dtype = np.float32
+    import numpy as xp
+    #import cupy as xp
+    dtype = xp.float32
 
     # https://scaron.info/blog/quadratic-programming-in-python.html
-    M = np.array([[1., 2., 0.], [-8., 3., 2.], [0., 1., 1.]], dtype=dtype)
-    P = np.dot(M.T, M)
-    q = np.dot(np.array([3., 2., 3.], dtype=dtype), M)
-    G = np.array([[1., 2., 1.], [2., 0., 1.], [-1., 2., -1.]], dtype=dtype)
-    h = np.array([3., 2., -2.], dtype=dtype)
+    M = xp.array([[1., 2., 0.], [-8., 3., 2.], [0., 1., 1.]], dtype=dtype)
+    P = xp.dot(M.T, M)
+    q = xp.dot(xp.array([3., 2., 3.], dtype=dtype), M)
+    G = xp.array([[1., 2., 1.], [2., 0., 1.], [-1., 2., -1.]], dtype=dtype)
+    h = xp.array([3., 2., -2.], dtype=dtype)
     A = None
     b = None
 
     print(quadprog(P, q, G, h))
 
     import chainer.gradient_check
-    dl = np.random.uniform(-1, 1, (3,)).astype(dtype)
+    dl = xp.random.uniform(-1, 1, (3,)).astype(dtype)
     chainer.gradient_check.check_backward(quadprog, (P, q, G, h), dl, atol=0.1) # XXX
