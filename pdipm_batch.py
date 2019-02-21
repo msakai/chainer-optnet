@@ -106,10 +106,17 @@ def batch_permute(a, idx):
 
 def batch_pivots_to_perm(piv):
     xp = get_array_module(piv)
-    ret = xp.empty_like(piv)
-    for i in range(len(piv)):
-        ret[i] = pivots.pivots_to_perm(piv[i])
-    return ret
+    if cupy_available and xp == cupy:
+        piv = piv.get()
+        ret = np.empty_like(piv)
+        for i in range(len(piv)):
+            ret[i] = pivots.pivots_to_perm(piv[i])
+        return cupy.asarray(ret)
+    else:
+        ret = xp.empty_like(piv)
+        for i in range(len(piv)):
+            ret[i] = pivots.pivots_to_perm(piv[i])
+        return ret
 
 
 def batch_lu_factor_partial(A, B, C):

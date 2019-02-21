@@ -17,9 +17,16 @@ def get_array_module(a):
 
 def pivots_to_perm(piv):
     xp = get_array_module(piv)
-    p = id_perm(xp, len(piv))
-    for (i,j) in enumerate(piv):
-        p[i], p[j] = p[j], p[i]
+    if cupy_available and xp == cupy:
+        piv = piv.get()
+        p = id_perm(np, len(piv))
+        for (i,j) in enumerate(piv):
+            p[i], p[j] = p[j], p[i]
+        return cupy.asarray(p)
+    else:
+        p = id_perm(xp, len(piv))
+        for (i,j) in enumerate(piv):
+            p[i], p[j] = p[j], p[i]
     return p
 
 def perm_to_pivots(idx):
