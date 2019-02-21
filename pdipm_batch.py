@@ -4,15 +4,30 @@ import numpy as np
 import scipy.linalg
 import pivots
 
+try:
+    import cupy
+    import cupy_decomp_lu
+    cupy_available = True
+except ImportError:
+    cupy_available = False
 
-def beye(nBatch, n, dtype):
-    return np.broadcast_to(np.expand_dims(np.eye(n, dtype=dtype), 0), (nBatch, n, n))
+
+def get_array_module(a):
+    if cupy_available and isinstance(a, cupy.ndarray):
+        return cupy
+    else:
+        return np
+ 
+
+def beye(xp, nBatch, n, dtype):
+    return xp.broadcast_to(xp.expand_dims(xp.eye(n, dtype=dtype), 0), (nBatch, n, n))
 
 
 def bdiag(x):
+    xp = get_array_module(x)
     n, sz = x.shape
-    X = np.zeros((n, sz, sz), dtype=x.dtype)
-    I = beye(n, sz, dtype=np.bool)
+    X = xp.zeros((n, sz, sz), dtype=x.dtype)
+    I = beye(xp, n, sz, dtype=np.bool)
     X[I] = x.reshape(-1)
     return X
 
@@ -22,60 +37,86 @@ def btranspose(A):
 
 
 def bmvm(A, x):
-    return (A @ np.expand_dims(x, 2)).squeeze(2)
+    xp = get_array_module(A)
+    return (A @ xp.expand_dims(x, 2)).squeeze(2)
 
 
 def bvmm(x, A):
-    return (np.expand_dims(x, 1) @ A).squeeze(1)
+    xp = get_array_module(x)
+    return (xp.expand_dims(x, 1) @ A).squeeze(1)
 
 
 def batch_lu_factor(A):
-    A = np.copy(A)
-    Ps = []
-    for i in range(len(A)):
-        A[i], piv = scipy.linalg.lu_factor(A[i], overwrite_a=True)
-        Ps.append(piv)
-    return A, np.array(Ps)
+    xp = get_array_module(A)
+    A = A.copy()
+    if cupy_available and xp == cupy:
+        Ps = xp.empty((A.shape[0], A.shape[1]), dtype=np.int32)
+        for i in range(len(A)):
+            A[i], Ps[i] = cupy_decomp_lu.lu_factor(A[i], overwrite_a=True)
+        return A, Ps
+    else:
+        Ps = []
+        for i in range(len(A)):
+            A[i], piv = scipy.linalg.lu_factor(A[i], overwrite_a=True)
+            Ps.append(piv)
+        return A, xp.array(Ps)
 
 
 def batch_lu_solve(lu_and_piv, b):
     LU, piv = lu_and_piv
-    b = np.copy(b)
+    xp = get_array_module(LU)
+    b = b.copy()
     for i in range(len(LU)):
-        b[i] = scipy.linalg.lu_solve((LU[i], piv[i]), b[i], overwrite_b=True)
+        if cupy_available and xp == cupy:
+            b[i] = cupy_decomp_lu.lu_solve((LU[i], piv[i]), b[i], overwrite_b=True)
+        else:
+            b[i] = scipy.linalg.lu_solve((LU[i], piv[i]), b[i], overwrite_b=True)
     return b
 
 
 def batch_lu_unpack(LU):
+    xp = get_array_module(LU)
     nBatch, n, _ = LU.shape
-    I = np.eye(n, dtype=LU.dtype)
-    L = np.empty((nBatch, n, n), dtype=LU.dtype)
-    U = np.empty((nBatch, n, n), dtype=LU.dtype)
+    I = xp.eye(n, dtype=LU.dtype)
+    L = xp.empty((nBatch, n, n), dtype=LU.dtype)
+    U = xp.empty((nBatch, n, n), dtype=LU.dtype)
     for i in range(nBatch):
-        L[i] = np.tril(LU[i], k=-1) + I
-        U[i] = np.triu(LU[i])
+        L[i] = xp.tril(LU[i], k=-1) + I
+        U[i] = xp.triu(LU[i])
     return L, U
 
 
 def batch_bpermute(a, idx):
-    ret = np.empty_like(a)
-    for i in range(len(idx)):
-        ret[i] = pivots.bpermute(a[i], idx[i])
+    xp = get_array_module(a)
+    ret = xp.empty_like(a)
+    if a.size != 0:
+        for i in range(len(idx)):
+            ret[i] = pivots.bpermute(a[i], idx[i])
     return ret
 
 
 def batch_permute(a, idx):
-    ret = np.empty_like(a)
-    for i in range(len(idx)):
-        ret[i] = pivots.permute(a[i], idx[i])
+    xp = get_array_module(a)
+    ret = xp.empty_like(a)
+    if a.size != 0:
+        for i in range(len(idx)):
+            ret[i] = pivots.permute(a[i], idx[i])
     return ret
 
 
 def batch_pivots_to_perm(piv):
-    ret = np.empty_like(piv)
-    for i in range(len(piv)):
-        ret[i] = pivots.pivots_to_perm(piv[i])
-    return ret
+    xp = get_array_module(piv)
+    if cupy_available and xp == cupy:
+        piv = piv.get()
+        ret = np.empty_like(piv)
+        for i in range(len(piv)):
+            ret[i] = pivots.pivots_to_perm(piv[i])
+        return cupy.asarray(ret)
+    else:
+        ret = xp.empty_like(piv)
+        for i in range(len(piv)):
+            ret[i] = pivots.pivots_to_perm(piv[i])
+        return ret
 
 
 def batch_lu_factor_partial(A, B, C):
@@ -86,6 +127,7 @@ def batch_lu_factor_partial(A, B, C):
 
     c.f. https://locuslab.github.io/qpth/#block-lu-factorization
     """
+    xp = get_array_module(A)
     nBatch = A.shape[0]
     n1 = A.shape[1]
     n2 = B.shape[2]
@@ -94,12 +136,12 @@ def batch_lu_factor_partial(A, B, C):
     assert B.shape == (nBatch,n1,n2)
     assert C.shape == (nBatch,n2,n1)
 
-    X_LU = np.zeros((nBatch,n,n), dtype=A.dtype)
-    X_piv = np.zeros((nBatch,n), dtype=np.int32)
+    X_LU = xp.zeros((nBatch,n,n), dtype=A.dtype)
+    X_piv = xp.zeros((nBatch,n), dtype=np.int32)
 
     if n1 == 0:
-        C_invA_B = np.zeros((nBatch,n2,n2), dtype=A.dtype)
-        X_LU_21_pre = np.zeros((nBatch,n2,0), dtype=A.dtype)
+        C_invA_B = xp.zeros((nBatch,n2,n2), dtype=A.dtype)
+        X_LU_21_pre = xp.zeros((nBatch,n2,0), dtype=A.dtype)
     else:
         A_LU_and_piv = batch_lu_factor(A)
         A_LU, A_piv = A_LU_and_piv
@@ -130,8 +172,8 @@ def batch_lu_factor_partial(A, B, C):
         def check():
             X_L, X_U = batch_lu_unpack(X_LU)
             X = batch_permute(X_L @ X_U, batch_pivots_to_perm(X_piv))
-            X_expected = np.concatenate((np.concatenate((A, B), axis=2), np.concatenate((C, D), axis=2)), axis=1)
-            return np.allclose(X, X_expected)
+            X_expected = xp.concatenate((xp.concatenate((A, B), axis=2), xp.concatenate((C, D), axis=2)), axis=1)
+            return xp.allclose(X, X_expected)
         #assert check()
 
         return X_LU, X_piv
@@ -200,22 +242,23 @@ class KKTSolverLUFull(KKTSolver):
 
     def solve(self, rx, rs, rz, ry):
         assert self.D is not None
+        xp = get_array_module(rx)
         nineq, nz, neq, nBatch = get_sizes(self.G, self.A)
 
-        H_ = np.zeros((nBatch, nz + nineq, nz + nineq), dtype=self.Q.dtype)
+        H_ = xp.zeros((nBatch, nz + nineq, nz + nineq), dtype=self.Q.dtype)
         H_[:, :nz, :nz] = self.Q
         H_[:, -nineq:, -nineq:] = self.D
         # H =
         # (Q 0)
         # (0 D)
         if neq > 0:
-            A_ = np.concatenate([np.concatenate([self.G, beye(nBatch, nineq, dtype=self.Q.dtype)], 2),
-                                 np.concatenate([self.A, np.zeros((nBatch, neq, nineq), dtype=self.Q.dtype)], 2)], 1)
-            g_ = np.concatenate([rx, rs], 1)
-            h_ = np.concatenate([rz, ry], 1)
+            A_ = xp.concatenate([xp.concatenate([self.G, beye(xp, nBatch, nineq, dtype=self.Q.dtype)], 2),
+                                 xp.concatenate([self.A, xp.zeros((nBatch, neq, nineq), dtype=self.Q.dtype)], 2)], 1)
+            g_ = xp.concatenate([rx, rs], 1)
+            h_ = xp.concatenate([rz, ry], 1)
         else:
-            A_ = np.concatenate([self.G, beye(nBatch, nineq, dtype=self.Q.dtype)], 2)
-            g_ = np.concatenate([rx, rs], 1)
+            A_ = xp.concatenate([self.G, beye(xp, nBatch, nineq, dtype=self.Q.dtype)], 2)
+            g_ = xp.concatenate([rx, rs], 1)
             h_ = rz
 
         H_LU = batch_lu_factor(H_)
@@ -267,6 +310,7 @@ class KKTSolverLUPartial(KKTSolver):
         self.A = A
         self.Q_LU = batch_lu_factor(Q)
         nineq, nz, neq, nBatch = get_sizes(self.G, self.A)
+        xp = get_array_module(Q)
 
         # S = [ A Q^{-1} A^T        A Q^{-1} G^T          ]
         #     [ G Q^{-1} A^T        G Q^{-1} G^T + D^{-1} ]
@@ -282,27 +326,29 @@ class KKTSolverLUPartial(KKTSolver):
             G_invQ_AT = G @ invQ_AT # C
             A_invQ_GT = btranspose(G_invQ_AT) # B
         else:
-            A_invQ_AT = np.zeros((nBatch,neq,neq), dtype=Q.dtype) # A
-            G_invQ_AT = np.zeros((nBatch,nineq,neq), dtype=Q.dtype) # C
-            A_invQ_GT = np.zeros((nBatch,neq,nineq), dtype=Q.dtype) # B
+            A_invQ_AT = xp.zeros((nBatch,neq,neq), dtype=Q.dtype) # A
+            G_invQ_AT = xp.zeros((nBatch,nineq,neq), dtype=Q.dtype) # C
+            A_invQ_GT = xp.zeros((nBatch,neq,nineq), dtype=Q.dtype) # B
         self.factor_kkt = batch_lu_factor_partial(A_invQ_AT, A_invQ_GT, G_invQ_AT)
-        self.factor_kkt_eye = beye(nBatch, nineq, dtype=np.bool)
+        self.factor_kkt_eye = beye(xp, nBatch, nineq, dtype=np.bool)
         self.d = None
         self.S_LU = None
 
     def set_d(self, d):
+        xp = get_array_module(d)
         self.d = d
-        S_22 = np.copy(self.G_invQ_GT)
+        S_22 = self.G_invQ_GT.copy()
         S_22[self.factor_kkt_eye] += (1. / d).reshape(-1)
         self.S_LU = self.factor_kkt(S_22)
 
     def solve(self, rx, rs, rz, ry):
         assert self.S_LU is not None
+        xp = get_array_module(rx)
         nineq, nz, neq, nBatch = get_sizes(self.G, self.A)
 
         invQ_rx = batch_lu_solve(self.Q_LU, rx)
         if neq > 0:
-            h = np.concatenate((bvmm(invQ_rx, btranspose(self.A)) - ry,
+            h = xp.concatenate((bvmm(invQ_rx, btranspose(self.A)) - ry,
                                 bvmm(invQ_rx, btranspose(self.G)) + rs / self.d - rz), 1)
         else:
             h = bvmm(invQ_rx, btranspose(self.G)) + rs / self.d - rz
@@ -336,11 +382,12 @@ class KKTSolverIRUnopt(KKTSolver):
         self.D = bdiag(d)
 
     def solve(self, rx, rs, rz, ry):
+        xp = get_array_module(rx)
         nineq, nz, neq, nBatch = get_sizes(self.G, self.A)
 
         eps = 1e-7
-        Q_tilde = self.Q + eps * beye(nBatch, nz, dtype=self.Q.dtype)
-        D_tilde = self.D + eps * beye(nBatch, nineq, dtype=self.Q.dtype)
+        Q_tilde = self.Q + eps * beye(xp, nBatch, nz, dtype=self.Q.dtype)
+        D_tilde = self.D + eps * beye(xp, nBatch, nineq, dtype=self.Q.dtype)
 
         dx, ds, dz, dy = self.factor_solve_kkt_reg(
             Q_tilde, D_tilde, rx, rs, rz, ry, eps)
@@ -372,20 +419,21 @@ class KKTSolverIRUnopt(KKTSolver):
         return resx, ress, resz, resy
 
     def factor_solve_kkt_reg(self, Q_tilde, D_tilde, rx, rs, rz, ry, eps):
+        xp = get_array_module(self.G)
         nineq, nz, neq, nBatch = get_sizes(self.G, self.A)
 
-        H_ = np.zeros((nBatch, nz + nineq, nz + nineq), dtype=Q_tilde.dtype)
+        H_ = xp.zeros((nBatch, nz + nineq, nz + nineq), dtype=Q_tilde.dtype)
         H_[:, :nz, :nz] = Q_tilde
         H_[:, -nineq:, -nineq:] = D_tilde
         if neq > 0:
-            A_ = np.concatenate([np.concatenate([self.G, beye(nBatch, nineq, dtype=Q_tilde.dtype)], 2),
-                                 np.concatenate([self.A, np.zeros((nBatch, neq, nineq), dtype=Q_tilde.dtype)], 2)], 1)
-            g_ = np.concatenate([rx, rs], 1)
-            h_ = np.concatenate([rz, ry], 1)
+            A_ = xp.concatenate([xp.concatenate([self.G, beye(xp, nBatch, nineq, dtype=Q_tilde.dtype)], 2),
+                                 xp.concatenate([self.A, xp.zeros((nBatch, neq, nineq), dtype=Q_tilde.dtype)], 2)], 1)
+            g_ = xp.concatenate([rx, rs], 1)
+            h_ = xp.concatenate([rz, ry], 1)
         else:
-            A_ = np.concatenate(
-                [G, beye(nBatch, nineq, dtype=Q_tilde.dtype)], 2)
-            g_ = np.concatenate([rx, rs], 1)
+            A_ = xp.concatenate(
+                [G, beye(xp, nBatch, nineq, dtype=Q_tilde.dtype)], 2)
+            g_ = xp.concatenate([rx, rs], 1)
             h_ = rz
 
         H_LU = batch_lu_factor(H_)
@@ -394,7 +442,7 @@ class KKTSolverIRUnopt(KKTSolver):
         invH_g_ = batch_lu_solve(H_LU, g_)
 
         S_ = A_ @ invH_A_
-        S_ -= eps * beye(nBatch, neq + nineq, dtype=Q_tilde.dtype)
+        S_ -= eps * beye(xp, nBatch, neq + nineq, dtype=Q_tilde.dtype)
         S_LU = batch_lu_factor(S_)
         t_ = bvmm(invH_g_, btranspose(A_)) - h_
         w_ = batch_lu_solve(S_LU, -t_)
@@ -411,25 +459,26 @@ class KKTSolverIRUnopt(KKTSolver):
 
 def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
             eps=1e-12, verbose=0, notImprovedLim=3, maxIter=20):
+    xp = get_array_module(Q)
     nineq, nz, neq, nBatch = get_sizes(G, A)
 
     # Find initial values
-    d = np.ones((nBatch, nineq), dtype=Q.dtype)
+    d = xp.ones((nBatch, nineq), dtype=Q.dtype)
     kkt_solver.set_d(d)
     x, s, z, y = kkt_solver.solve(
-        p, np.zeros((nBatch, nineq), dtype=Q.dtype),
+        p, xp.zeros((nBatch, nineq), dtype=Q.dtype),
         -h, -b if b is not None else None)
 
     # Make all of the slack variables >= 1.
     M = s.min(1)
     I = M < 0
-    if np.any(I):
+    if xp.any(I):
         s[I] -= M[I] - 1
 
     # Make all of the inequality dual variables >= 1.
     M = z.min(1)
     I = M < 0
-    if np.any(I):
+    if xp.any(I):
         z[I] -= M[I] - 1
 
     best = {'resids': None, 'x': None, 'z': None, 's': None, 'y': None}
@@ -445,11 +494,11 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
         rs = z
         rz = bvmm(x, btranspose(G)) + s - h
         ry = bvmm(x, btranspose(A)) - b if neq > 0 else 0.0
-        mu = np.abs((s * z).sum(axis=1) / nineq)
-        z_resid = np.linalg.norm(rz, axis=1)
-        y_resid = np.linalg.norm(ry, axis=1) if neq > 0 else 0
+        mu = xp.abs((s * z).sum(axis=1) / nineq)
+        z_resid = xp.linalg.norm(rz, axis=1)
+        y_resid = xp.linalg.norm(ry, axis=1) if neq > 0 else 0
         pri_resid = y_resid + z_resid
-        dual_resid = np.linalg.norm(rx, axis=1)
+        dual_resid = xp.linalg.norm(rx, axis=1)
         resids = pri_resid + dual_resid + nineq * mu
 
         d = z / s
@@ -457,15 +506,15 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
 
         if verbose >= 1:
             print('iter: {}, pri_resid: {:.5g}, dual_resid: {:.5g}, mu: {:.5g}'.format(
-                i, pri_resid.mean(), dual_resid.mean(), mu.mean()),
-                  file=sys.stderr)
+                i, pri_resid.mean()[()], dual_resid.mean()[()], mu.mean()[()]),
+                file=sys.stderr)
 
         if best['resids'] is None:
             best['resids'] = resids
-            best['x'] = np.copy(x)
-            best['z'] = np.copy(z)
-            best['s'] = np.copy(s)
-            best['y'] = np.copy(y) if y is not None else None
+            best['x'] = x.copy()
+            best['z'] = z.copy()
+            best['s'] = s.copy()
+            best['y'] = y.copy() if y is not None else None
             nNotImproved = 0
         else:
             I = resids < best['resids']
@@ -473,14 +522,14 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
                 nNotImproved = 0
             else:
                 nNotImproved += 1
-            I_nz = np.broadcast_to(I.reshape(nBatch,1), (nBatch,nz))
-            I_nineq = np.broadcast_to(I.reshape(nBatch,1), (nBatch, nineq))
+            I_nz = xp.broadcast_to(I.reshape(nBatch,1), (nBatch,nz))
+            I_nineq = xp.broadcast_to(I.reshape(nBatch,1), (nBatch, nineq))
             best['resids'][I] = resids[I]
             best['x'][I_nz] = x[I_nz]
             best['z'][I_nineq] = z[I_nineq]
             best['s'][I_nineq] = s[I_nineq]
             if neq > 0:
-                I_neq = np.broadcast_to(I.reshape(nBatch,1), (nBatch, neq))
+                I_neq = xp.broadcast_to(I.reshape(nBatch,1), (nBatch, neq))
                 best['y'][I_neq] = y[I_neq]
         if nNotImproved == notImprovedLim or best['resids'].max() < eps or mu.min() > 1e32:
             if best['resids'].max() > 1. and verbose >= 0:
@@ -490,20 +539,20 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
         dx_aff, ds_aff, dz_aff, dy_aff = kkt_solver.solve(rx, rs, rz, ry)
 
         # compute centering directions
-        alpha = np.minimum(np.minimum(get_step(z, dz_aff),
+        alpha = xp.minimum(xp.minimum(get_step(z, dz_aff),
                                       get_step(s, ds_aff)),
-                           np.ones(nBatch, dtype=Q.dtype))
-        alpha_nineq = np.broadcast_to(np.expand_dims(alpha, 1), (nBatch, nineq))
+                           xp.ones(nBatch, dtype=Q.dtype))
+        alpha_nineq = xp.broadcast_to(xp.expand_dims(alpha, 1), (nBatch, nineq))
         t1 = s + alpha_nineq * ds_aff
         t2 = z + alpha_nineq * dz_aff
-        t3 = np.sum(t1 * t2, axis=1)
-        t4 = np.sum(s * z, axis=1)
+        t3 = xp.sum(t1 * t2, axis=1)
+        t4 = xp.sum(s * z, axis=1)
         sig = (t3 / t4)**3
 
-        rx = np.zeros((nBatch, nz), dtype=Q.dtype)
-        rs = (np.broadcast_to(np.expand_dims(-mu * sig, 1), (nBatch,nineq)) + ds_aff * dz_aff) / s
-        rz = np.zeros((nBatch, nineq), dtype=Q.dtype)
-        ry = np.zeros((nBatch, neq), dtype=Q.dtype) if neq > 0 else np.zeros((), dtype=Q.dtype)
+        rx = xp.zeros((nBatch, nz), dtype=Q.dtype)
+        rs = (xp.broadcast_to(xp.expand_dims(-mu * sig, 1), (nBatch,nineq)) + ds_aff * dz_aff) / s
+        rz = xp.zeros((nBatch, nineq), dtype=Q.dtype)
+        ry = xp.zeros((nBatch, neq), dtype=Q.dtype) if neq > 0 else xp.zeros((), dtype=Q.dtype)
 
         dx_cor, ds_cor, dz_cor, dy_cor = kkt_solver.solve(rx, rs, rz, ry)
 
@@ -511,12 +560,12 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
         ds = ds_aff + ds_cor
         dz = dz_aff + dz_cor
         dy = dy_aff + dy_cor if neq > 0 else None
-        alpha = np.minimum(0.999 * np.minimum(get_step(z, dz),
+        alpha = xp.minimum(0.999 * xp.minimum(get_step(z, dz),
                                               get_step(s, ds)),
-                           np.ones(nBatch, dtype=Q.dtype))
-        alpha_nineq = np.broadcast_to(np.expand_dims(alpha, 1), (nBatch, nineq))
-        alpha_neq = np.broadcast_to(np.expand_dims(alpha, 1), (nBatch, neq)) if neq > 0 else None
-        alpha_nz = np.broadcast_to(np.expand_dims(alpha, 1), (nBatch, nz))
+                           xp.ones(nBatch, dtype=Q.dtype))
+        alpha_nineq = xp.broadcast_to(xp.expand_dims(alpha, 1), (nBatch, nineq))
+        alpha_neq = xp.broadcast_to(xp.expand_dims(alpha, 1), (nBatch, neq)) if neq > 0 else None
+        alpha_nz = xp.broadcast_to(xp.expand_dims(alpha, 1), (nBatch, nz))
 
         x += alpha_nz * dx
         s += alpha_nineq * ds
@@ -540,33 +589,35 @@ if __name__ == '__main__':
     #Solver = KKTSolverLUFull
     Solver = KKTSolverLUPartial
     #Solver = KKTSolverIRUnopt
+    #xp = np
+    xp = cupy
 
-    Q = np.array([[[1,0],[0,1]]], dtype=dtype)
-    q = np.array([[1,1]], dtype=dtype)
-    G = np.array([[[-1,0], [0,-1]]], dtype=dtype)
-    h = np.array([[-1,-1]], dtype=dtype)
-    A = None #np.zeros((0,0), dtype=dtype)
-    b = None #np.zeros(0, dtype=dtype)
+    Q = xp.array([[[1,0],[0,1]]], dtype=dtype)
+    q = xp.array([[1,1]], dtype=dtype)
+    G = xp.array([[[-1,0], [0,-1]]], dtype=dtype)
+    h = xp.array([[-1,-1]], dtype=dtype)
+    A = None #xp.zeros((0,0), dtype=dtype)
+    b = None #xp.zeros(0, dtype=dtype)
     print(forward(Q, q, G, h, A, b, Solver(Q, G, A), verbose=True))
 
     # https://scaron.info/blog/quadratic-programming-in-python.html
-    M = np.array([[1., 2., 0.], [-8., 3., 2.], [0., 1., 1.]])
-    P = np.dot(M.T, M)
-    q = np.dot(np.array([3., 2., 3.]), M)
-    G = np.array([[1., 2., 1.], [2., 0., 1.], [-1., 2., -1.]])
-    h = np.array([3., 2., -2.])
-    A = None #np.zeros((0,0), dtype=dtype)
-    b = None #np.zeros(0, dtype=dtype)
-    Q = np.array([P])
-    q = np.array([q])
-    G = np.array([G])
-    h = np.array([h])
+    M = xp.array([[1., 2., 0.], [-8., 3., 2.], [0., 1., 1.]])
+    P = xp.dot(M.T, M)
+    q = xp.dot(xp.array([3., 2., 3.]), M)
+    G = xp.array([[1., 2., 1.], [2., 0., 1.], [-1., 2., -1.]])
+    h = xp.array([3., 2., -2.])
+    A = None #xp.zeros((0,0), dtype=dtype)
+    b = None #xp.zeros(0, dtype=dtype)
+    Q = xp.expand_dims(P, 0)
+    q = xp.expand_dims(q, 0)
+    G = xp.expand_dims(G, 0)
+    h = xp.expand_dims(h, 0)
     print(forward(Q, q, G, h, A, b, Solver(Q, G, A), verbose=True))
 
-    Q = np.array([[[1,0],[0,0.1]]], dtype=dtype)
-    q = np.array([[3,4]], dtype=dtype)
-    G = np.array([[[-1,0], [0,-1], [-1,-3], [2,5], [3,4]]], dtype=dtype)
-    h = np.array([[0,0,-15,100,80]], dtype=dtype)
-    A = None #np.zeros((0,0), dtype=dtype)
-    b = None #np.zeros(0, dtype=dtype)
+    Q = xp.array([[[1,0],[0,0.1]]], dtype=dtype)
+    q = xp.array([[3,4]], dtype=dtype)
+    G = xp.array([[[-1,0], [0,-1], [-1,-3], [2,5], [3,4]]], dtype=dtype)
+    h = xp.array([[0,0,-15,100,80]], dtype=dtype)
+    A = None #xp.zeros((0,0), dtype=dtype)
+    b = None #xp.zeros(0, dtype=dtype)
     print(forward(Q, q, G, h, A, b, Solver(Q, G, A), verbose=True))
