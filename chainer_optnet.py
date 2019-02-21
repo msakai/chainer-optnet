@@ -83,7 +83,7 @@ class QuadProg(function_node.FunctionNode):
         dx = chainer.Variable(dx)
         dlam = chainer.Variable(dlam)
         if dnu is None:
-            dnu = xp.zeros_like(nu.data)
+            dnu = xp.zeros_like(nu)
         dnu = chainer.Variable(dnu)
 
         def bger(x, y):
