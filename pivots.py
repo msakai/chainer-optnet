@@ -30,7 +30,7 @@ def pivots_to_perm(piv):
     return p
 
 def perm_to_pivots(idx):
-    xp = get_array_module(a)
+    xp = get_array_module(idx)
     o2c = id_perm(xp, len(idx)) # 元のindexの要素が現在どこにあるか
     c2o = id_perm(xp, len(idx)) # 現在のindexの要素は元のどこの要素か
     piv = xp.empty_like(idx, dtype=np.int32)
@@ -47,6 +47,7 @@ def bpermute(a, idx):
     return a[idx]
 
 def permute(a, idx):
+    xp = get_array_module(a)
     ret = xp.empty_like(a)
     ret[idx] = a
     return ret
@@ -63,10 +64,11 @@ def comp_perm(p1, p2):
     return p1[p2]
 
 def inv_perm(idx):
+    xp = get_array_module(idx)
     ret = xp.empty_like(idx)
     #for (i,j) in enumerate(idx):
     #    ret[j] = i
-    ret[idx] = id_perm(len(idx))
+    ret[idx] = id_perm(xp, len(idx))
     return ret
 
 
