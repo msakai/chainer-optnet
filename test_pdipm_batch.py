@@ -1,5 +1,5 @@
 import numpy as np
-import pdipm_batch
+from chainer_optnet.solvers import pdipm_batch
 
 dtype = np.float32
 #dtype = np.float64

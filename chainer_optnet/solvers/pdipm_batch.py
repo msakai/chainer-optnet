@@ -2,11 +2,11 @@ from abc import ABCMeta, abstractmethod
 import sys
 import numpy as np
 import scipy.linalg
-import pivots
+from chainer_optnet import pivots
 
 try:
     import cupy
-    import cupy_decomp_lu
+    from chainer_optnet import cupy_decomp_lu
     cupy_available = True
 except ImportError:
     cupy_available = False

@@ -1,5 +1,5 @@
 import numpy as np
-import pdipm_single
+from chainer_optnet.solvers import pdipm_single
 
 dtype = np.float32
 Solver = pdipm_single.KKTSolverChoPartial

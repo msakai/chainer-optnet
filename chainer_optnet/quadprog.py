@@ -2,7 +2,7 @@ import chainer
 from chainer import function_node
 from chainer.utils import type_check
 import chainer.functions as F
-import pdipm_batch
+import chainer_optnet.solvers.pdipm_batch as pdipm_batch
 
 
 class QuadProg(function_node.FunctionNode):

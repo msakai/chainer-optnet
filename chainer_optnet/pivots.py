@@ -3,7 +3,6 @@ import chainer
 
 try:
     import cupy
-    import cupy_decomp_lu
     cupy_available = True
 except ImportError:
     cupy_available = False

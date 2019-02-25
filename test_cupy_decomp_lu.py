@@ -13,7 +13,7 @@ from cupy import cuda
 from cupy import testing
 from cupy.testing import condition
 
-import cupy_decomp_lu
+from chainer_optnet import cupy_decomp_lu
 
 
 @unittest.skipUnless(
