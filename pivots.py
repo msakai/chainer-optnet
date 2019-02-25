@@ -70,29 +70,3 @@ def inv_perm(idx):
     #    ret[j] = i
     ret[idx] = id_perm(xp, len(idx))
     return ret
-
-
-if __name__ == '__main__':
-    import scipy.linalg
-
-    A = np.array([[2, 5, 8, 7], [5, 2, 2, 8], [7, 5, 6, 6], [5, 4, 4, 8]])
-
-    lu, piv = scipy.linalg.lu_factor(A)
-    p = pivots_to_perm(piv)
-    q = inv_perm(p)
-
-    print(piv)
-    print(p)
-    print(pivots_to_perm(perm_to_pivots(p)) == p)
-    print(perm_to_pivots(pivots_to_perm(piv)) == piv)
-
-    L, U = np.tril(lu, k=-1) + np.eye(4), np.triu(lu)
-
-    print(A - permute(L @ U, p))
-    print(bpermute(A, p) - L @ U)
-
-    print(permute(A, q) - L @ U)
-    print(A - bpermute(L @ U, q))
-
-    print(comp_perm(inv_perm(p), p))
-    print(comp_perm(p, inv_perm(p)))
