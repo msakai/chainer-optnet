@@ -506,7 +506,7 @@ def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
 
         if verbose >= 1:
             print('iter: {}, pri_resid: {:.5g}, dual_resid: {:.5g}, mu: {:.5g}'.format(
-                i, pri_resid.mean()[()], dual_resid.mean()[()], mu.mean()[()]),
+                i, float(pri_resid.mean()), float(dual_resid.mean()), float(mu.mean())),
                 file=sys.stderr)
 
         if best['resids'] is None:
