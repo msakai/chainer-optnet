@@ -129,8 +129,8 @@ def quadprog(Q, p, G, h, A = None, b = None):
     h = expand(h, 1)
     if A is None:
         xp = chainer.backend.get_array_module(Q)
-        A = chainer.Variable(xp.zeros((Q.shape[0], 0, Q.shape[1])))
-        b = chainer.Variable(xp.zeros((Q.shape[0], 0)))
+        A = chainer.Variable(xp.zeros((Q.shape[0], 0, Q.shape[1]), dtype=Q.dtype))
+        b = chainer.Variable(xp.zeros((Q.shape[0], 0), dtype=Q.dtype))
     else:
         A = expand(A, 2)
         b = expand(b, 1)
