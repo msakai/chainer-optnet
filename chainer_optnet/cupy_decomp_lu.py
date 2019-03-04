@@ -1,5 +1,6 @@
+from warnings import warn
+
 import numpy
-from numpy import linalg
 
 import cupy
 from cupy import cuda
@@ -18,7 +19,8 @@ def lu_factor(a, overwrite_a=False, check_finite=True):
     where ``P`` is a permutation matrix,  ``L`` lower-triangular with
     unit diagonal elements, and ``U`` upper-triangular matrix.
     Note that in the current implementation ``a`` must be
-    a real matrix, and only float32 and float64 are supported.
+    a real matrix, and only :class:`numpy.float32` and :class:`numpy.float64`
+    are supported.
 
     Args:
         a (cupy.ndarray): The input matrix with dimension ``(N, N)``
@@ -38,38 +40,57 @@ def lu_factor(a, overwrite_a=False, check_finite=True):
             permutation matrix ``P``.
 
     .. seealso:: :func:`scipy.linalg.lu_factor`
+
+    .. note::
+
+        Current implementation returns result different from SciPy when the
+        matrix singular. SciPy returns an array containing ``0.`` while the
+        current implementation returns an array containing ``nan``.
+
+        >>> import numpy as np
+        >>> import scipy.linalg
+        >>> scipy.linalg.lu_factor(np.array([[0, 1], [0, 0]], \
+dtype=np.float32))
+        (array([[0., 1.],
+               [0., 0.]], dtype=float32), array([0, 1], dtype=int32))
+
+        >>> import cupy as cp
+        >>> import cupyx.scipy.linalg
+        >>> cupyx.scipy.linalg.lu_factor(cp.array([[0, 1], [0, 0]], \
+dtype=cp.float32))
+        (array([[ 0.,  1.],
+               [nan, nan]], dtype=float32), array([0, 1], dtype=int32))
     """
 
     if not cuda.cusolver_enabled:
         raise RuntimeError('Current cupy only supports cusolver in CUDA 8.0')
 
-    util._assert_cupy_array(a)
+    a = cupy.asarray(a)
     util._assert_rank2(a)
     util._assert_nd_squareness(a)
 
-    if a.dtype.char == 'f' or a.dtype.char == 'd':
-        dtype = a.dtype.char
+    dtype = a.dtype
+
+    if dtype.char == 'f':
+        getrf = cusolver.sgetrf
+        getrf_bufferSize = cusolver.sgetrf_bufferSize
+    elif dtype.char == 'd':
+        getrf = cusolver.dgetrf
+        getrf_bufferSize = cusolver.dgetrf_bufferSize
     else:
-        dtype = numpy.find_common_type((a.dtype.char, 'f'), ()).char
+        raise NotImplementedError('Only float32 and float64 are supported.')
 
     a = a.astype(dtype, order='F', copy=(not overwrite_a))
 
     if check_finite:
         if a.dtype.kind == 'f' and not cupy.isfinite(a).all():
             raise ValueError(
-                "array must not contain infs or NaNs")
+                'array must not contain infs or NaNs')
 
     cusolver_handle = device.get_cusolver_handle()
     dev_info = cupy.empty(1, dtype=numpy.intc)
 
     ipiv = cupy.empty((a.shape[0],), dtype=numpy.intc)
-
-    if dtype == 'f':
-        getrf = cusolver.sgetrf
-        getrf_bufferSize = cusolver.sgetrf_bufferSize
-    else:  # dtype == 'd'
-        getrf = cusolver.dgetrf
-        getrf_bufferSize = cusolver.dgetrf_bufferSize
 
     m = a.shape[0]
 
@@ -79,6 +100,13 @@ def lu_factor(a, overwrite_a=False, check_finite=True):
     # LU factorization
     getrf(cusolver_handle, m, m, a.data.ptr, m, workspace.data.ptr,
           ipiv.data.ptr, dev_info.data.ptr)
+
+    if dev_info[0] < 0:
+        raise ValueError('illegal value in %d-th argument of '
+                         'internal getrf (lu_factor)' % -dev_info[0])
+    elif dev_info[0] > 0:
+        warn('Diagonal number %d is exactly zero. Singular matrix.'
+             % dev_info[0], RuntimeWarning, stacklevel=2)
 
     # cuSolver uses 1-origin while SciPy uses 0-origin
     ipiv -= 1
@@ -95,6 +123,7 @@ def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
         b (cupy.ndarray): The matrix with dimension ``(M,)`` or
             ``(M, N)``.
         trans ({0, 1, 2}): Type of system to solve:
+
             ========  =========
             trans     system
             ========  =========
@@ -127,21 +156,24 @@ def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
 
     m = lu.shape[0]
     if m != b.shape[0]:
-        raise ValueError("incompatible dimensions.")
+        raise ValueError('incompatible dimensions.')
 
-    if lu.dtype.char == 'f' or lu.dtype.char == 'd':
-        dtype = lu.dtype.char
+    dtype = lu.dtype
+    if dtype.char == 'f':
+        getrs = cusolver.sgetrs
+    elif dtype.char == 'd':
+        getrs = cusolver.dgetrs
     else:
-        dtype = numpy.find_common_type((lu.dtype.char, 'f'), ()).char
+        raise NotImplementedError('Only float32 and float64 are supported.')
 
     if trans == 0:
         trans = cublas.CUBLAS_OP_N
     elif trans == 1:
         trans = cublas.CUBLAS_OP_T
     elif trans == 2:
-        trans = cublas.CUBLAS_OP_H
+        trans = cublas.CUBLAS_OP_C
     else:
-        raise ValueError("unknown trans")
+        raise ValueError('unknown trans')
 
     lu = lu.astype(dtype, order='F', copy=False)
     ipiv = ipiv.astype(ipiv.dtype, order='F', copy=True)
@@ -152,19 +184,17 @@ def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
     if check_finite:
         if lu.dtype.kind == 'f' and not cupy.isfinite(lu).all():
             raise ValueError(
-                "array must not contain infs or NaNs")
+                'array must not contain infs or NaNs.\n'
+                'Note that when a singular matrix is given, unlike '
+                'scipy.linalg.lu_factor, cupyx.scipy.linalg.lu_factor '
+                'returns an array containing NaN.')
         if b.dtype.kind == 'f' and not cupy.isfinite(b).all():
             raise ValueError(
-                "array must not contain infs or NaNs")
+                'array must not contain infs or NaNs')
 
     n = 1 if b.ndim == 1 else b.shape[1]
     cusolver_handle = device.get_cusolver_handle()
     dev_info = cupy.empty(1, dtype=numpy.intc)
-
-    if dtype == 'f':
-        getrs = cusolver.sgetrs
-    else:  # dtype == 'd'
-        getrs = cusolver.dgetrs
 
     # solve for the inverse
     getrs(cusolver_handle,
@@ -172,23 +202,8 @@ def lu_solve(lu_and_piv, b, trans=0, overwrite_b=False, check_finite=True):
           m, n, lu.data.ptr, m, ipiv.data.ptr, b.data.ptr,
           m, dev_info.data.ptr)
 
+    if dev_info[0] < 0:
+        raise ValueError('illegal value in %d-th argument of '
+                         'internal getrs (lu_solve)' % -dev_info[0])
+
     return b
-
-
-if __name__ == '__main__':
-    xp = cupy
-    
-    A = xp.array([[2, 5, 8, 7], [5, 2, 2, 8], [7, 5, 6, 6], [5, 4, 4, 8]], dtype=numpy.float64)
-    b = xp.array([1, 1, 1, 1], dtype=numpy.float64)
-    lu, piv = lu_factor(A)
-    print(lu)
-    print(piv)
-    
-    L, U = xp.tril(lu, k=-1) + xp.eye(4), xp.triu(lu)
-    print(L @ U)
-    
-    x = lu_solve((lu, piv), b.copy())
-    print(x)
-    print(A @ x)
-    print(b)
-    print(xp.allclose(A @ x - b, xp.zeros((4,))))
