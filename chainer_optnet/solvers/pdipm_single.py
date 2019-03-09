@@ -159,7 +159,7 @@ def quadprog(Q, p, G, h, A, b, kkt_solver: KKTSolver,
         # if (pri_resid < 5e-4 and dual_resid < 5e-4 and mu < 4e-4):
         improved = (prev_resid is None) or (resid < prev_resid + 1e-6)
         if not improved or resid < eps:
-            return x, y, z
+            break
         prev_resid = resid
 
         dx_aff, ds_aff, dz_aff, dy_aff = kkt_solver.solve(rx, rs, rz, ry)
@@ -192,7 +192,7 @@ def quadprog(Q, p, G, h, A, b, kkt_solver: KKTSolver,
         z += alpha * dz
         y = y + alpha * dy if neq > 0 else None
 
-    return x, y, z
+    return x, y, z, s
 
 
 def get_step(v, dv):
