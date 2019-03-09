@@ -119,8 +119,8 @@ class KKTSolverChoPartial(KKTSolver):
         return dx, ds, dz, dy
 
 
-def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
-            eps=1e-12, verbose=0, maxIter=20):
+def quadprog(Q, p, G, h, A, b, kkt_solver: KKTSolver,
+             eps=1e-12, verbose=0, maxIter=20):
     nineq, nz, neq, _ = get_sizes(G, A)
 
     # find initial values

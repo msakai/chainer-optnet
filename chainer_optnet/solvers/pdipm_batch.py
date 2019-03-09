@@ -457,8 +457,8 @@ class KKTSolverIRUnopt(KKTSolver):
         return dx, ds, dz, dy
 
 
-def forward(Q, p, G, h, A, b, kkt_solver: KKTSolver,
-            eps=1e-12, verbose=0, notImprovedLim=3, maxIter=20):
+def quadprog(Q, p, G, h, A, b, kkt_solver: KKTSolver,
+             eps=1e-12, verbose=0, notImprovedLim=3, maxIter=20):
     xp = get_array_module(Q)
     nineq, nz, neq, nBatch = get_sizes(G, A)
 

@@ -48,7 +48,7 @@ class QuadProg(function_node.FunctionNode):
         Q, p, G, h, A, b = inputs
 
         self.kkt_solver = pdipm_batch.KKTSolverLUPartial(Q, G, A)
-        zhat, nu, lam, slack = pdipm_batch.forward(Q, p, G, h, A, b, self.kkt_solver)
+        zhat, nu, lam, slack = pdipm_batch.quadprog(Q, p, G, h, A, b, self.kkt_solver)
         if nu is None:
             xp = chainer.backend.get_array_module(*inputs)
             nu = xp.zeros((A.shape[0], A.shape[1]), dtype=Q.dtype)
