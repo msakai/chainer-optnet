@@ -1,13 +1,22 @@
+import numpy as np
 import chainer
+import chainer.cuda
 from chainer import function_node
 from chainer.utils import type_check
 import chainer.functions as F
 import chainer_optnet.solvers.pdipm_batch as pdipm_batch
 
+try:
+    import chainer_optnet.solvers.cvxpy as cvxpy_solver
+    _cvxpy_available = True
+except ImportError:
+    _cvxpy_available = False
+
 
 class QuadProg(function_node.FunctionNode):
-    def __init__(self):
+    def __init__(self, solver):
         super().__init__()
+        self.solver = solver
 
     def check_type_forward(self, in_types):
         n_in = in_types.size()
@@ -47,11 +56,40 @@ class QuadProg(function_node.FunctionNode):
     def forward(self, inputs):
         Q, p, G, h, A, b = inputs
 
-        self.kkt_solver = pdipm_batch.KKTSolverLUPartial(Q, G, A)
-        zhat, nu, lam, slack = pdipm_batch.quadprog(Q, p, G, h, A, b, self.kkt_solver)
-        if nu is None:
+        if self.solver == 'pdipm_batch':
+            self.kkt_solver = pdipm_batch.KKTSolverLUPartial(Q, G, A)
+            zhat, nu, lam, slack = pdipm_batch.quadprog(Q, p, G, h, A, b, self.kkt_solver)
+            if nu is None:
+                xp = chainer.backend.get_array_module(*inputs)
+                nu = xp.zeros((A.shape[0], A.shape[1]), dtype=Q.dtype)
+        elif self.solver == 'cvxpy':
+            if not _cvxpy_available:
+                raise RuntimeError("cvxpy is not available")
+            self.kkt_solver = None
+            Q = chainer.cuda.to_cpu(Q)
+            p = chainer.cuda.to_cpu(p)
+            G = chainer.cuda.to_cpu(G)
+            h = chainer.cuda.to_cpu(h)
+            A = chainer.cuda.to_cpu(A)
+            b = chainer.cuda.to_cpu(b)
+            n = len(Q)
+            nv = G.shape[2]
+            nineq = G.shape[1]
+            neq = A.shape[1]
+            zhat = np.empty((n,nv), dtype=Q.dtype)
+            nu = np.empty((n,neq), dtype=Q.dtype)
+            lam = np.empty((n,nineq), dtype=Q.dtype)
+            slack = np.empty((n,nineq), dtype=Q.dtype)
+            for i in range(n):
+                zhat[i], nu[i], lam[i], slack[i] = cvxpy_solver.quadprog(Q[i], p[i], G[i], h[i], A[i], b[i])
             xp = chainer.backend.get_array_module(*inputs)
-            nu = xp.zeros((A.shape[0], A.shape[1]), dtype=Q.dtype)
+            zhat = xp.asarray(zhat)
+            nu = xp.asarray(nu)
+            lam = xp.asarray(lam)
+            slack = xp.asarray(slack)
+            self.retain_inputs((0,2,4)) # Q, G, A
+        else:
+            raise ValueError("unknown solver")
 
         self.retain_outputs((0,))
         self.nu = nu
@@ -61,6 +99,10 @@ class QuadProg(function_node.FunctionNode):
 
     def backward(self, indexes, grad_outputs):
         dl_dzhat, = grad_outputs
+
+        if self.solver == "cvxpy":
+            Q, G, A = self.get_retained_inputs()
+            self.kkt_solver = pdipm_batch.KKTSolverLUPartial(Q.data, G.data, A.data)
 
         zhat, = self.get_retained_outputs()
         nu = self.nu
@@ -98,7 +140,7 @@ class QuadProg(function_node.FunctionNode):
         return dQ, dp, dG, dh, dA, db
 
 
-def quadprog(Q, p, G, h, A = None, b = None):
+def quadprog(Q, p, G, h, A = None, b = None, solver='pdipm_batch'):
     nBatch = None
     is_batched = False
 
@@ -135,7 +177,7 @@ def quadprog(Q, p, G, h, A = None, b = None):
         A = expand(A, 2)
         b = expand(b, 1)
 
-    ret = QuadProg().apply((Q, p, G, h, A, b))[0]
+    ret = QuadProg(solver=solver).apply((Q, p, G, h, A, b))[0]
     if is_batched:
         return ret
     else:
