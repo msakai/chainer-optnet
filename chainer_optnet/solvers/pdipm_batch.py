@@ -321,7 +321,7 @@ class KKTSolverLUPartial(KKTSolver):
         # for more details.
         self.G_invQ_GT = G @ batch_lu_solve(self.Q_LU, btranspose(self.G))
         if neq > 0:
-            invQ_AT = batch_lu_solve(Q_LU, btranspose(A))
+            invQ_AT = batch_lu_solve(self.Q_LU, btranspose(A))
             A_invQ_AT = A @ invQ_AT # A
             G_invQ_AT = G @ invQ_AT # C
             A_invQ_GT = btranspose(G_invQ_AT) # B
